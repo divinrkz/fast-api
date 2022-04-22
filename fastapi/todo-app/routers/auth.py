@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException
+import sys
+sys.path.append('..')
+
+from fastapi import FastAPI, Depends, HTTPException, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from pydantic import BaseModel
 from typing import Optional
@@ -21,13 +24,18 @@ class CreateUser(BaseModel):
     password: str
 
 
-bcrypt_context = CryptContext(schemas=['bcrypt'], depreciated="auto")
+bcrypt_context = CryptContext(schemes=['bcrypt'])
 
 models.Base.metadata.create_all(bind=engine)
 
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl='token')
 
-app = FastAPI()
+# app = FastAPI()
+router = APIRouter(
+    prefix='/auth',
+    tags=['auth'],
+    responses={401: {'user': 'Not authorized'}}
+)
 
 
 def get_db():
@@ -66,7 +74,7 @@ def create_access_token(username: str, user_id: int, expires_delta: Optional[tim
     return jwt.encode(encode, SECRET_KEY, algorithm=ALGO)
 
 
-@app.post('/create/user')
+@router.post('/create/user')
 async def create_new_user(create_user: CreateUser, db: Session = Depends(get_db)):
     create_user_model = models.Users()
     create_user_model.email = create_user.email
@@ -80,6 +88,7 @@ async def create_new_user(create_user: CreateUser, db: Session = Depends(get_db)
     db.commit()
 
 
+@router.get('/current-user')
 async def get_current_user(token: str = Depends(oauth2_bearer)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGO])
@@ -93,6 +102,7 @@ async def get_current_user(token: str = Depends(oauth2_bearer)):
         raise HTTPException(status_code=404, detail='User not found')
 
 
+@router.post('/login')
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = authenticate_user(form_data.username, form_data.password, db)
     if not user:
@@ -100,8 +110,3 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     token_expires = timedelta(minutes=20)
     token = create_access_token(user.username, user.id, expires_delta=token_expires)
     return {'token': token}
-
-    return {
-        'status': 201,
-        'message': 'Successful'
-    }
